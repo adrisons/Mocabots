@@ -1,3 +1,4 @@
+/*jshint esversion: 6 */
 document.addEventListener("DOMContentLoaded", function(event) {
 
   // Invoca al randombot
@@ -56,7 +57,7 @@ var httpGetAsync = function(theUrl, callback)
 		};
 		xmlHttp.open("GET", theUrl, true); // true for asynchronous
 		xmlHttp.send(null);
-}
+};
 
 // Para el bot que esté en curso
 var stopCurrentBot = function() {

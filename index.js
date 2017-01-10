@@ -1,3 +1,4 @@
+/*jshint esversion: 6 */
 var express = require('express');
 var path = require('path');
 var Twitter = require('twitter');

@@ -1,3 +1,4 @@
+/*jshint esversion: 6 */
 var Twitter = require('twit');
 var constants = require('./constants.js');
 var fs = require("fs");
@@ -8,8 +9,8 @@ var TWEET_MAX_LENGTH = 140;
 // NO TOCAR. Puedes bloquear la cuenta. Max: 1 petición por minuto
 var REQ_INT_TIME = 60000; // Request interval time
 var POST_INT_TIME = REQ_INT_TIME * 3;
-var REPLY_INT_TIME = REQ_INT_TIME * 6;
-var RETWEET_INT_TIME = REQ_INT_TIME * 5;
+var REPLY_INT_TIME = REQ_INT_TIME * 1;
+var RETWEET_INT_TIME = REQ_INT_TIME * 1;
 var REF_TRENDS_INT_TIME = REQ_INT_TIME * 15;
 
 
@@ -27,7 +28,7 @@ var REPLIES_FILE = __dirname + '/replies.txt';
 //// Utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-var gen_rand_num = function(max) {
+var genRandNum = function(max) {
     return Math.floor(Math.random() * max);
 };
 
@@ -57,8 +58,8 @@ var getMsgFromReddit = function() {
         if (err) {
             console.log('Error when accessing Reddit: %s', err); //outputs any errors
         }
-        for (var i = 0; i < data.data.children.length; i++) {
-            messages.push(data.data.children[i].data.title);
+        for (let child of data.data.children) {
+            messages.push(child.data.title);
         }
         console.log('Reddit (%d)', data.data.children.length);
         return messages;
@@ -76,7 +77,7 @@ var getRandomMessages = function(array, callback) {
         var rand;
         // Se obtienen n mensajes aleatorios del array
         for (var i = 0; i < max_twits; i++) {
-            rand = gen_rand_num(array.length);
+            rand = genRandNum(array.length);
             messages.push(array[rand]);
         }
         callback(messages);
@@ -84,14 +85,14 @@ var getRandomMessages = function(array, callback) {
 };
 
 // Se obtienen los tweets a twitear
-var get_tweets_for_reply = function(callback) {
+var getTweetsForReply = function(callback) {
 
     var a = getMsgFromFile(REPLIES_FILE);
     getRandomMessages(a, callback);
 };
 
 // Se obtienen los tweets a twitear
-var get_twits_to_post = function(callback) {
+var getTwitsToPost = function(callback) {
 
     var a1 = getMsgFromFile(TWITS_FILE);
     var a2 = getMsgFromReddit();
@@ -101,10 +102,10 @@ var get_twits_to_post = function(callback) {
 
 // Genera un mensaje de respuesta con la mencion del autor (necesaria para el
 // reply de twitter con id de user)
-var gen_tweet_for_reply = function(user_name, callback) {
+var genTweetForReply = function(user_name, callback) {
 
-    get_tweets_for_reply(function(messages) {
-        var rand_init = gen_rand_num(messages.length);
+    getTweetsForReply(function(messages) {
+        var rand_init = genRandNum(messages.length);
         // Generamos mensajes
         var message = '@' + user_name + ' ' + messages[rand_init];
         if (message.length > 140) {
@@ -116,16 +117,16 @@ var gen_tweet_for_reply = function(user_name, callback) {
 
 // Obtiene las tendencias de Twitter y genera mensajes conteniendo alguna de
 // forma aleatoria
-var gen_tweets = function(callback) {
+var genTweets = function(callback) {
 
     var twitts_to_post = [];
-    get_twits_to_post(function(received_tweets) {
+    getTwitsToPost(function(received_tweets) {
         console.log("twitts_to_post(%d): %s...", received_tweets.length, received_tweets[0]);
-        get_trends(function(trends) {
+        getTrends(function(trends) {
             console.log("trends(%d): %s...", trends.length, trends[0]);
             for (var i = 0; i < trends.length; i++) {
-                var rand_init = gen_rand_num(received_tweets.length);
-                var rand_trend = gen_rand_num(trends.length);
+                var rand_init = genRandNum(received_tweets.length);
+                var rand_trend = genRandNum(trends.length);
                 // Generamos mensajes
                 var message = received_tweets[rand_init] + ' ' + trends[rand_trend];
                 if (message.length > 140) {
@@ -139,7 +140,7 @@ var gen_tweets = function(callback) {
 };
 
 // Comprueba si un string tiene caracteres no ascii
-var has_non_ascii_chars = function(str) {
+var hasNonAsciiChars = function(str) {
     var ascii = /^[ -~]+$/;
 
     if (!ascii.test(str)) {
@@ -150,6 +151,70 @@ var has_non_ascii_chars = function(str) {
 ////////////////////////////////////////////////////////////////////////////////
 //// Twitter functions
 ////////////////////////////////////////////////////////////////////////////////
+
+// Obtiene las tendencias de la zona que se especifique en id
+var getTrends = function() {
+    var trendsAvaliable = [];
+    var params = {
+        id: 23424977 //24865675 Europa
+    };
+    var promise = new Promise(function(resolve, reject) {
+        Twitter.get('trends/place', params, function(err, data) {
+            if (!err) {
+                var trends = data[0].trends;
+                for (let t of trends) {
+                    trendsAvaliable.push(t.name);
+                }
+                resolve(trendsAvaliable);
+            } else {
+                console.log('Error in getTrends:', err);
+                reject(Error("Error in getTrends"));
+            }
+        });
+    });
+    return promise;
+};
+
+// Obtiene el primer tweet valido de la lista 'list' y llama a la funcion de
+var getValidTweet = function(list) {
+
+    var promise = new Promise(function(resolve, reject) {
+        for (let tweet of list) {
+            var user_name = tweet.user.name;
+            if (!hasNonAsciiChars(user_name)) {
+                resolve(tweet);
+            } else {
+                console.log('Error when GET TWEET...');
+                reject(Error("Error when GET TWEET..."));
+            }
+        }
+    });
+    return promise;
+};
+
+// Obtiene los tweets recientes con la tendencia 'trend'
+var getRecentTweets = function(trend) {
+    var params = {
+        q: trend, // REQUIRED
+        result_type: 'recent',
+        lang: 'en'
+    };
+
+    var promise = new Promise(function(resolve, reject) {
+        Twitter.get('search/tweets', params, function(err, data) {
+            if (!err) {
+                resolve(data.statuses);
+            } else {
+                console.log('Error when SEARCHING...', err);
+                reject(Error("Error when SEARCHING..."));
+            }
+        });
+    });
+
+    return promise;
+
+};
+
 
 // Publicar el mensaje en Twitter
 var post = function(message) {
@@ -162,96 +227,34 @@ var post = function(message) {
     });
 };
 
-// Obtiene las tendencias de la zona que se especifique en id
-var get_trends = function(callback) {
-    var trendsAvaliable = [];
-    var params = {
-        id: 23424977 //24865675 Europa
-    };
-    Twitter.get('trends/place', params, function(err, data) {
-        if (!err) {
-            var trends = data[0].trends;
-            for (var i = 0; i < trends.length; i++) {
-                trendsAvaliable.push(trends[i].name);
-            }
-            callback(trendsAvaliable);
-        } else {
-            console.log('Error in get_trends:', err);
-            return [];
+// Retweetea el tweet
+var retweet = function(tweet) {
+
+    Twitter.post('statuses/retweet/:id', {
+        id: tweet.id
+    }, function(err, response) {
+        if (err) {
+            console.log('Error when RETWEETING', err);
         }
     });
-};
 
-// Obtiene el primer tweet valido de la lista 'list' y llama a la funcion de
-// callback con este tweet
-var get_valid_tweet = function(list, callback) {
-    var tweet;
-    var user_name;
 
-    for (var i = 0; i < list.length; i++) {
-        tweet = list[i];
-        user_name = tweet.user.name;
-        if (!has_non_ascii_chars(user_name)) {
-            callback(tweet);
-            return tweet;
-        }
-    }
-    console.log('Error when GET TWEET...', err);
-};
-
-// Obtiene los tweets recientes con la tendencia 'trend' y llama a la funcion de
-// callback con esta lista.
-var get_recent_tweets = function(trend, callback) {
-    var params = {
-        q: trend, // REQUIRED
-        result_type: 'recent',
-        lang: 'en'
-    };
-
-    Twitter.get('search/tweets', params, function(err, data) {
-        if (!err) {
-            callback(data.statuses);
-        } else {
-            console.log('Error when SEARCHING...', err);
-        }
-    });
-};
-
-// Busca el último tweet que contiene la tendencia 'trend' y lo retweetea
-// Ej: trend = '#nodejs'
-var retweet = function(trend) {
-    get_recent_tweets(trend, function(list) {
-        get_valid_tweet(list, function(tweet) {
-            Twitter.post('statuses/retweet/:id', {
-                id: tweet.id
-            }, function(err, response) {
-                if (err) {
-                    console.log('Error when RETWEETING', err);
-                }
-            });
-        });
-    });
 };
 
 // Busca el último tweet que contiene la tendencia 'trend' y lo contesta
 // Ej: trend = '#nodejs'
-var reply = function(trend) {
-    get_recent_tweets(trend, function(list) {
-        get_valid_tweet(list, function(tweet) {
-            gen_tweet_for_reply(tweet.user.name, function(message) {
-                Twitter.post('statuses/update', {
-                    status: message,
-                    in_reply_to_status_id: tweet.id
-                }, function(err, response) {
-                    if (err) {
-                        console.log('Error when REPLYING', err);
-                    }
-                    console.log('Yuhu! Response: %s', response.text);
-                });
+var reply = function(message) {
 
-            });
-        });
+    Twitter.post('statuses/update', {
+        status: message,
+        in_reply_to_status_id: tweet.id
+    }, function(err, response) {
+        if (err) {
+            console.log('Error when REPLYING', err);
+        }
+        console.log('Yuhu! Response: %s', response.text);
     });
+
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -262,64 +265,55 @@ var reply = function(trend) {
 // Replybot: responde tweets con tendencias con mensajes
 // cogidos de un fichero
 // -------------------------------------------------------
-var startReplyBot = function(){
-  get_trends(function(trends) {
+var startReplybot = function() {
+    console.log("INIT replyBot");
     return setInterval(function() {
-      console.log("INIT replyBot");
-      var rand_trend = gen_rand_num(trends.length);
-      reply(trends[rand_trend]);
+        getTrends().then(function(trends) {
+            var rand_trend = genRandNum(trends.length);
+            getRecentTweets(trends[rand_trend]).then(function(list) {
+                getValidTweet(list).then(function(tweet) {
+                    genTweetForReply(tweet.user.name, function(message) {
+                        reply(message);
+                    });
+                });
+            });
+        });
+
+
     }, REPLY_INT_TIME);
-  });
 
 };
 
 // -------------------------------------------------------
 // Retweetbot: retweetea tweets con tendencias
 // -------------------------------------------------------
-var startRetweetBot = function() {
-  get_trends(function(trends) {
+var startRetweetbot = function() {
+    console.log("INIT retweetBot");
     return setInterval(function() {
-        console.log("INIT retweetBot");
-        var rand_trend = gen_rand_num(trends.length);
-        retweet(trends[rand_trend]);
-    }, RETWEET_INT_TIME);
-  });
-};
-
-
-// Bots que interactuan con la API de Twitter
-var startSmartbot = function() {
-    gen_tweets(function(twitts, trends) {
-        var trend;
-        if (trends.length > 0) {
-            var rand_trends_init = gen_rand_num(trends.length);
-            trend = trends[rand_trends_init];
-            console.log('Trend: ', trend);
-        }
-        var postBotId = setInterval(function() {
-            console.log("INIT postBot");
-            if (twitts.length > 0) {
-                var rand_init = gen_rand_num(twitts.length);
-                post(twitts[rand_init]);
-                console.log('Message: ', twitts[rand_init]);
-            }
-        }, POST_INT_TIME);
-
-        var replyBotId = startReplyBot();
-
-        var retweetBotId = startRetweetBot();
-
-        var trendsBotId = setInterval(function() {
-            console.log("INIT generateBot");
-            gen_tweets(function(tw, tr) {
-                twitts = tw;
-                trends = tr;
+        var trends = [],
+            recentTweets = [];
+        getTrends().then(function(trends) {
+            console.log("getTrends");
+            trends = data;
+        }, function(err) {
+            console.log("Error when getTrends: ", err);
+        });
+        if (trends) {
+            var rand_trend = genRandNum(trends.length);
+            getRecentTweets(trends[rand_trend]).then(function(list) {
+                recentTweets = list;
+            }, function(err) {
+                console.log("Error when getRecentTweets: ", err);
             });
-        }, REF_TRENDS_INT_TIME);
-
-        return [trendsBotId, replyBotId, postBotId, retweetBotId];
-    });
-
+            if (recentTweets) {
+                getValidTweet(recentTweets).then(function(tweet) {
+                    retweet(tweet);
+                }, function(err) {
+                    console.log("Error when getValidTweet: ", err);
+                });
+            }
+        }
+    }, RETWEET_INT_TIME);
 };
 
 
@@ -411,9 +405,8 @@ var stopBot = function(botId) {
 
 
 // Se exportan las funciones de los bots
-exports.startSmartbot = startSmartbot;
-exports.startReplyBot = startReplyBot;
-exports.startRetweetBot = startRetweetBot;
 exports.startRandombot = startRandombot;
 exports.startReadbot = startReadbot;
+exports.startReplybot = startReplybot;
+exports.startRetweetbot = startRetweetbot;
 exports.stopBot = stopBot;
